@@ -1,0 +1,5 @@
+# https://rust-lang.github.io/rustfmt
+unstable_features = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+imports_layout = "Vertical"
