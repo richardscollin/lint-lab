@@ -1,7 +1,10 @@
 image: "rust:latest"
 test:cargo:
   script:
+    - rustup default
     - rustc --version && cargo --version  # Print version info for debugging
+    - rustup component list
+    - rustup component add clippy
     - cargo test --workspace --verbose
     - cargo clippy --message-format=json -- -D clippy::pedantic | cargo run -- lints -i - -o gl-code-quality-report.json
     - cargo run -- stats --format open-metrics -o gl-code-quality-report.json
