@@ -8,7 +8,7 @@ test:cargo:
     - cargo test --workspace --verbose
     - cargo build --release
     - cargo clippy --message-format=json -- -D clippy::pedantic | ./target/release/lint-lab lints -i - -o gl-code-quality-report.json
-    - cargo run -- stats --format open-metrics -o gl-code-quality-report.json
+    - cargo run -- stats --format open-metrics -o metrics.txt
   artifacts:
     reports:
       metrics: metrics.txt
