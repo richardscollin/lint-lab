@@ -188,7 +188,7 @@ fn main() {
         Command::Lints(args) => {
             let input = get_infile(args.input.as_ref());
             let output = get_outfile(args.output.as_ref());
-            gitlab_clippy(&args, input, output).unwrap()
+            gitlab_clippy(&args, input, output).unwrap();
         }
         /*
         Command::Rustfmt(args) => {
@@ -199,7 +199,7 @@ fn main() {
         */
         Command::Stats(args) => {
             let output = get_outfile(args.output.as_ref());
-            stats(&args, output).unwrap()
+            stats(&args, output).unwrap();
         }
     }
 }
