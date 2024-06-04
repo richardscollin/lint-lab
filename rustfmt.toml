@@ -1,5 +1,5 @@
 # https://rust-lang.github.io/rustfmt
 unstable_features = true
-group_imports = "StdExternalCrate"
-imports_granularity = "Crate"
-imports_layout = "Vertical"
+group_imports = "StdExternalCrate" # https://rust-lang.github.io/rustfmt/?version=master&search=#group_imports
+imports_granularity = "Crate" # https://rust-lang.github.io/rustfmt/?version=master&search=#imports_granularity
+imports_layout = "Vertical" # https://rust-lang.github.io/rustfmt/?version=master&search=#imports_layout

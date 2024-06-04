@@ -1,26 +1,11 @@
 use std::{
-    fmt,
-    fs,
-    io,
+    fmt, fs, io,
     io::BufRead,
-    path::{
-        Path,
-        PathBuf,
-    },
+    path::{Path, PathBuf},
 };
 
 use cargo_metadata::Message;
-use clap::{
-    builder::PossibleValue,
-    Parser,
-};
-
-#[derive(clap::Parser)]
-#[command(version, about, arg_required_else_help = true)]
-struct Args {
-    #[command(subcommand)]
-    cmd: Command,
-}
+use clap::{builder::PossibleValue, Parser};
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -52,6 +37,13 @@ impl fmt::Display for Format {
             }
         )
     }
+}
+
+#[derive(clap::Parser)]
+#[command(version, about, arg_required_else_help = true)]
+struct Args {
+    #[command(subcommand)]
+    cmd: Command,
 }
 
 #[derive(Debug, clap::Args)]
@@ -206,14 +198,8 @@ mod gitlab {
 
     use std::hash::Hasher;
 
-    use cargo_metadata::{
-        diagnostic::DiagnosticLevel,
-        CompilerMessage,
-    };
-    use serde::{
-        Deserialize,
-        Serialize,
-    };
+    use cargo_metadata::{diagnostic::DiagnosticLevel, CompilerMessage};
+    use serde::{Deserialize, Serialize};
 
     /// <https://docs.gitlab.com/ee/ci/testing/code_quality.html#implement-a-custom-tool>
     #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -321,18 +307,11 @@ mod gitlab {
 }
 
 mod rustfmt {
-    use std::{
-        borrow::Cow,
-        io,
-    };
+    use std::{borrow::Cow, io};
 
     use crate::{
-        gitlab::{
-            CodeQualityReportEntry,
-            Severity,
-        },
-        Message,
-        RustfmtArgs,
+        gitlab::{CodeQualityReportEntry, Severity},
+        Message, RustfmtArgs,
     };
 
     #[derive(Clone, Debug, serde::Deserialize)]
