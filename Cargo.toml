@@ -6,6 +6,7 @@ license = "MIT"
 description = "rust project ci lint utilities primarily for use on gitlab"
 repository = "https://github.com/richardscollin/lint-lab"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+include = ["/src"]
 
 [dependencies]
 cargo-lock     = { version = "9.0.0"                          }
