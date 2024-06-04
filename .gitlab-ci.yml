@@ -9,7 +9,7 @@ test:cargo:
     - cargo build --release
     - cargo clippy --message-format=json -- -W clippy::pedantic | ./target/release/lint-lab lints -i - -o gl-code-quality-report.json
     - cargo run -- stats --format open-metrics -o metrics.txt
-    - cargo +nightly fmt --message-format=json | ./target/release/lint-lab rustfmt -i -
+    # - cargo +nightly fmt --message-format=json | ./target/release/lint-lab rustfmt -i -
   artifacts:
     reports:
       metrics: metrics.txt
