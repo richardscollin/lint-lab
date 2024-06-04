@@ -51,7 +51,7 @@ struct SubcommandArgs {
     #[arg(short, long)]
     output: String,
 }
-// type RustfmtArgs = SubcommandArgs;
+type RustfmtArgs = SubcommandArgs;
 
 #[derive(Debug, clap::Args)]
 #[command(arg_required_else_help = true)]
@@ -87,7 +87,8 @@ enum Command {
     Lints(LintsArgs),
 
     // Convert rustfmt json output (nightly) to gitlab code quality report
-    // Rustfmt(RustfmtArgs),
+    Rustfmt(RustfmtArgs),
+
     /// Print out project statistics
     Stats(StatsArgs),
 }
@@ -119,19 +120,17 @@ fn get_outfile(output_filename: &Path) -> Box<dyn Write> {
 }
 
 fn gitlab_clippy(_args: &LintsArgs, input: impl BufRead, output: impl Write) -> io::Result<()> {
-    let result = Message::parse_stream(input)
+    let result: Vec<CodeQualityReportEntry> = Message::parse_stream(input)
         .filter_map(Result::ok)
         .filter_map(|each| match each {
             Message::CompilerMessage(msg) => Some(msg.try_into().ok()?),
             _ => None,
         })
-        .collect::<Vec<CodeQualityReportEntry>>();
+        .collect();
     serde_json::to_writer_pretty(output, &result)?;
 
     Ok(())
 }
-
-// fn rustfmt(_args: &RustfmtArgs, _reader: impl BufRead, _writer: impl Write) -> io::Result<()> { todo!() }
 
 // ideas:
 //
@@ -187,13 +186,11 @@ fn main() {
             let output = get_outfile(args.output.as_ref());
             gitlab_clippy(&args, input, output).unwrap();
         }
-        /*
         Command::Rustfmt(args) => {
             let input = get_infile(args.input.as_ref());
             let output = get_outfile(args.output.as_ref());
-            rustfmt(&args, input, output).unwrap()
+            rustfmt::rustfmt(&args, input, output).unwrap()
         }
-        */
         Command::Stats(args) => {
             let output = get_outfile(args.output.as_ref());
             stats(&args, output).unwrap();
@@ -224,7 +221,7 @@ mod gitlab {
             severity: Severity,
             description: String,
             filename: String,
-            lineno: usize,
+            line_number: usize,
         ) -> Self {
             let fingerprint = {
                 #[allow(deprecated)]
@@ -242,7 +239,7 @@ mod gitlab {
                 severity,
                 location: Location {
                     path: filename,
-                    lines: Lines { begin: lineno },
+                    lines: Lines { begin: line_number },
                 },
             }
         }
@@ -315,42 +312,79 @@ mod gitlab {
 
 mod rustfmt {
 
-    use std::{borrow::Cow, marker::PhantomData};
+    use std::borrow::Cow;
 
     use serde::Deserialize;
 
+    use super::*;
     use crate::gitlab::{CodeQualityReportEntry, Severity};
 
     #[derive(Clone, Debug, Deserialize)]
-    struct RustfmtJsonEntry<'a> {
+    pub struct RustfmtJsonEntry<'a> {
         /// full path filename
         name: Cow<'a, str>,
         mismatches: Vec<Mismatch<'a>>,
     }
 
     #[derive(Clone, Debug, Deserialize)]
-    struct Mismatch<'a> {
+    pub struct Mismatch<'a> {
         original_begin_line: usize,
         // original_end_line: usize,
         // expected_begin_line: usize,
         // expected_end_line: usize,
-        // original: Cow<'a, str>,
-        // expected: Cow<'a, str>,
-        #[serde(skip)]
-        _phantom: PhantomData<&'a ()>,
+        original: Cow<'a, str>,
+        expected: Cow<'a, str>,
     }
 
-    impl TryFrom<RustfmtJsonEntry<'_>> for CodeQualityReportEntry {
-        type Error = ();
+    impl From<RustfmtJsonEntry<'_>> for Vec<CodeQualityReportEntry> {
+        fn from(value: RustfmtJsonEntry) -> Self {
+            fn diff(original: &str, expected: &str) -> String {
+                let mut byte_idx = None;
+                for (i, (c1, c2)) in std::iter::zip(original.chars(), expected.chars()).enumerate()
+                {
+                    if c1 != c2 {
+                        byte_idx = Some(i);
+                        break;
+                    }
+                }
 
-        fn try_from(value: RustfmtJsonEntry) -> Result<Self, Self::Error> {
-            Ok(Self::new(
-                "rustfmt".to_string(),
-                Severity::Minor,
-                "".to_string(),
-                value.name.to_string(),
-                value.mismatches.first().ok_or(())?.original_begin_line,
-            ))
+                format!(
+                    "Difference at byte: {}.\noriginal: {original}. expected: {expected}",
+                    byte_idx.unwrap()
+                )
+            }
+
+            value
+                .mismatches
+                .into_iter()
+                .map(|e| {
+                    let description = diff(&e.original, &e.expected);
+                    CodeQualityReportEntry::new(
+                        "rustfmt".to_string(),
+                        Severity::Minor,
+                        description,
+                        value.name.to_string(),
+                        e.original_begin_line,
+                    )
+                })
+                .collect()
         }
+    }
+
+    pub fn rustfmt(_args: &RustfmtArgs, input: impl BufRead, output: impl Write) -> io::Result<()> {
+        let result: Vec<_> = Message::parse_stream(input)
+            .filter_map(Result::ok)
+            .flat_map(|each| match each {
+                Message::TextLine(text) => {
+                    serde_json::from_str::<Vec<RustfmtJsonEntry>>(&text).unwrap_or_default()
+                }
+                _ => vec![],
+            })
+            .flat_map(Vec::<CodeQualityReportEntry>::from)
+            .collect();
+
+        serde_json::to_writer_pretty(output, &result)?;
+
+        Ok(())
     }
 }
