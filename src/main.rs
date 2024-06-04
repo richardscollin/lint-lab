@@ -1,16 +1,19 @@
 use std::{
-    self,
-    fmt::Display,
-    fs::File,
-    io::{self, BufRead, BufReader, BufWriter, Write},
-    path::{Path, PathBuf},
+    fmt,
+    fs,
+    io,
+    io::BufRead,
+    path::{
+        Path,
+        PathBuf,
+    },
 };
 
-use anyhow::Context;
 use cargo_metadata::Message;
-use clap::{builder::PossibleValue, Parser};
-
-use crate::gitlab::CodeQualityReportEntry;
+use clap::{
+    builder::PossibleValue,
+    Parser,
+};
 
 #[derive(clap::Parser)]
 #[command(version, about, arg_required_else_help = true)]
@@ -38,8 +41,8 @@ impl clap::ValueEnum for Format {
     }
 }
 
-impl Display for Format {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -107,19 +110,7 @@ enum Command {
 fn get_infile(input_filename: &Path) -> Box<dyn BufRead> {
     match input_filename {
         filename if filename.as_os_str() == "-" => Box::new(std::io::stdin().lock()),
-        filename => Box::new(BufReader::new(File::open(filename).unwrap_or_else(|err| {
-            panic!(
-                "Error: {err}. Unable to open {}",
-                filename.to_string_lossy()
-            )
-        }))),
-    }
-}
-
-fn get_outfile(output_filename: &Path) -> Box<dyn Write> {
-    match output_filename {
-        filename if filename.as_os_str() == "-" => Box::new(std::io::stdout().lock()),
-        filename => Box::new(BufWriter::new(File::create(filename).unwrap_or_else(
+        filename => Box::new(io::BufReader::new(fs::File::open(filename).unwrap_or_else(
             |err| {
                 panic!(
                     "Error: {err}. Unable to open {}",
@@ -130,8 +121,26 @@ fn get_outfile(output_filename: &Path) -> Box<dyn Write> {
     }
 }
 
-fn gitlab_clippy(_args: &LintsArgs, input: impl BufRead, output: impl Write) -> io::Result<()> {
-    let result: Vec<CodeQualityReportEntry> = Message::parse_stream(input)
+fn get_outfile(output_filename: &Path) -> Box<dyn io::Write> {
+    match output_filename {
+        filename if filename.as_os_str() == "-" => Box::new(std::io::stdout().lock()),
+        filename => Box::new(io::BufWriter::new(
+            fs::File::create(filename).unwrap_or_else(|err| {
+                panic!(
+                    "Error: {err}. Unable to open {}",
+                    filename.to_string_lossy()
+                )
+            }),
+        )),
+    }
+}
+
+fn gitlab_clippy(
+    _args: &LintsArgs,
+    input: impl io::BufRead,
+    output: impl io::Write,
+) -> io::Result<()> {
+    let result: Vec<gitlab::CodeQualityReportEntry> = Message::parse_stream(input)
         .filter_map(Result::ok)
         .filter_map(|each| match each {
             Message::CompilerMessage(msg) => Some(msg.try_into().ok()?),
@@ -143,33 +152,18 @@ fn gitlab_clippy(_args: &LintsArgs, input: impl BufRead, output: impl Write) -> 
     Ok(())
 }
 
-// ideas:
-//
-// build all targets
-// record binary size of each target
-//
-// memory usage in some releae tests
-//
-// llvm lines for certain functions
-
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Stats {
-    number_of_packages: Option<usize>,
-}
-
-fn stats(args: &StatsArgs, mut out: impl Write) -> std::io::Result<()> {
-    let lockfile = cargo_lock::Lockfile::load(&args.lockfile)
-        .context("unable to load lockfile")
-        .unwrap();
+fn stats(args: &StatsArgs, mut out: impl io::Write) -> std::io::Result<()> {
+    let lockfile = cargo_lock::Lockfile::load(&args.lockfile).expect("unable to load lockfile");
     let num_packages = lockfile.packages.len();
 
     match args.format {
         Format::Json => {
-            let stats = Stats {
-                number_of_packages: Some(num_packages),
-            };
-            serde_json::to_writer_pretty(&mut out, &stats)?;
+            serde_json::to_writer_pretty(
+                &mut out,
+                &serde_json::json!({
+                    "dependencies": num_packages,
+                }),
+            )?;
             writeln!(&mut out)?;
         }
         Format::OpenMetrics => {
@@ -212,8 +206,14 @@ mod gitlab {
 
     use std::hash::Hasher;
 
-    use cargo_metadata::{diagnostic::DiagnosticLevel, CompilerMessage};
-    use serde::{Deserialize, Serialize};
+    use cargo_metadata::{
+        diagnostic::DiagnosticLevel,
+        CompilerMessage,
+    };
+    use serde::{
+        Deserialize,
+        Serialize,
+    };
 
     /// <https://docs.gitlab.com/ee/ci/testing/code_quality.html#implement-a-custom-tool>
     #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -321,22 +321,28 @@ mod gitlab {
 }
 
 mod rustfmt {
+    use std::{
+        borrow::Cow,
+        io,
+    };
 
-    use std::borrow::Cow;
+    use crate::{
+        gitlab::{
+            CodeQualityReportEntry,
+            Severity,
+        },
+        Message,
+        RustfmtArgs,
+    };
 
-    use serde::Deserialize;
-
-    use super::*;
-    use crate::gitlab::{CodeQualityReportEntry, Severity};
-
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, serde::Deserialize)]
     pub struct RustfmtJsonEntry<'a> {
         /// full path filename
         name: Cow<'a, str>,
         mismatches: Vec<Mismatch<'a>>,
     }
 
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, serde::Deserialize)]
     pub struct Mismatch<'a> {
         original_begin_line: usize,
         // original_end_line: usize,
@@ -381,7 +387,11 @@ mod rustfmt {
         }
     }
 
-    pub fn rustfmt(_args: &RustfmtArgs, input: impl BufRead, output: impl Write) -> io::Result<()> {
+    pub fn rustfmt(
+        _args: &RustfmtArgs,
+        input: impl io::BufRead,
+        output: impl io::Write,
+    ) -> io::Result<()> {
         let result: Vec<_> = Message::parse_stream(input)
             .filter_map(Result::ok)
             .flat_map(|each| match each {
