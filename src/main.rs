@@ -1,5 +1,6 @@
 use std::{
     self,
+    fmt::Display,
     fs::File,
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
@@ -18,9 +19,7 @@ struct Args {
     cmd: Command,
 }
 
-#[derive(
-    Clone, Debug, serde::Deserialize, serde::Serialize, strum::Display, strum::VariantArray,
-)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Format {
     Json,
@@ -28,8 +27,7 @@ enum Format {
 }
 impl clap::ValueEnum for Format {
     fn value_variants<'a>() -> &'a [Self] {
-        use strum::VariantArray;
-        Self::VARIANTS
+        &[Self::Json, Self::OpenMetrics]
     }
 
     fn to_possible_value(&self) -> Option<PossibleValue> {
@@ -37,6 +35,19 @@ impl clap::ValueEnum for Format {
             Format::OpenMetrics => PossibleValue::new("open-metrics"),
             Format::Json => PossibleValue::new("json"),
         })
+    }
+}
+
+impl Display for Format {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Format::Json => "json",
+                Format::OpenMetrics => "open-metrics",
+            }
+        )
     }
 }
 
@@ -162,15 +173,14 @@ fn stats(args: &StatsArgs, mut out: impl Write) -> std::io::Result<()> {
             writeln!(&mut out)?;
         }
         Format::OpenMetrics => {
-            let mut registry = prometheus_client::registry::Registry::default();
-            let guage = prometheus_client::metrics::gauge::Gauge::<i64>::default();
-            guage.set(num_packages as i64);
-            registry.register("dependencies", "number of dependencies", guage);
-
-            let mut s = String::new();
-            prometheus_client::encoding::text::encode(&mut s, &registry)
-                .map_err(io::Error::other)?;
-            write!(&mut out, "{}", s)?;
+            write!(
+                &mut out,
+                r#"# HELP dependencies number of dependencies.
+# TYPE dependencies gauge
+dependencies {num_packages}
+# EOF
+"#
+            )?;
         }
     }
 
